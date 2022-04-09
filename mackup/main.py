@@ -17,6 +17,7 @@ Options:
   -f --force    Force every question asked to be answered with "Yes".
   -r --root     Allow mackup to be run as superuser.
   -n --dry-run  Show steps without executing.
+  -c --copy     Copy files instead of linking them.
   -v --verbose  Show additional details.
   --version     Show version.
 
@@ -79,8 +80,10 @@ def main():
         utils.CAN_RUN_AS_ROOT = True
 
     dry_run = args["--dry-run"]
-
+    copy = args["--copy"]
     verbose = args["--verbose"]
+
+    strategy = "copy" if copy else "link"
 
     if args["backup"]:
         # Check the env where the command is being run
@@ -88,7 +91,13 @@ def main():
 
         # Backup each application
         for app_name in sorted(mckp.get_apps_to_backup()):
-            app = ApplicationProfile(mckp, app_db.get_files(app_name), dry_run, verbose)
+            app = ApplicationProfile(
+                mckp,
+                app_db.get_files(app_name),
+                dry_run,
+                strategy,
+                verbose,
+            )
             printAppHeader(app_name)
             app.backup()
 
@@ -99,7 +108,7 @@ def main():
         # Restore the Mackup config before any other config, as we might need
         # it to know about custom settings
         mackup_app = ApplicationProfile(
-            mckp, app_db.get_files(MACKUP_APP_NAME), dry_run, verbose
+            mckp, app_db.get_files(MACKUP_APP_NAME), strategy, dry_run, verbose
         )
         printAppHeader(MACKUP_APP_NAME)
         mackup_app.restore()
@@ -115,7 +124,13 @@ def main():
         app_names.discard(MACKUP_APP_NAME)
 
         for app_name in sorted(app_names):
-            app = ApplicationProfile(mckp, app_db.get_files(app_name), dry_run, verbose)
+            app = ApplicationProfile(
+                mckp,
+                app_db.get_files(app_name),
+                dry_run,
+                strategy,
+                verbose,
+            )
             printAppHeader(app_name)
             app.restore()
 
@@ -140,7 +155,11 @@ def main():
 
             for app_name in sorted(app_names):
                 app = ApplicationProfile(
-                    mckp, app_db.get_files(app_name), dry_run, verbose
+                    mckp,
+                    app_db.get_files(app_name),
+                    dry_run,
+                    strategy,
+                    verbose,
                 )
                 printAppHeader(app_name)
                 app.uninstall()

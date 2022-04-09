@@ -14,7 +14,7 @@ class ApplicationProfile(object):
 
     """Instantiate this class with application specific data."""
 
-    def __init__(self, mackup, files, dry_run, verbose):
+    def __init__(self, mackup, files, dry_run=False, strategy="link", verbose=False):
         """
         Create an ApplicationProfile instance.
 
@@ -28,6 +28,7 @@ class ApplicationProfile(object):
         self.mackup = mackup
         self.files = list(files)
         self.dry_run = dry_run
+        self.strategy = strategy
         self.verbose = verbose
 
     def getFilepaths(self, filename):
@@ -87,7 +88,6 @@ class ApplicationProfile(object):
 
                 # Check if we already have a backup
                 if os.path.exists(mackup_filepath):
-
                     # Name it right
                     if os.path.isfile(mackup_filepath):
                         file_type = "file"
@@ -98,7 +98,7 @@ class ApplicationProfile(object):
                     else:
                         raise ValueError("Unsupported file: {}".format(mackup_filepath))
 
-                    # Ask the user if he really want to replace it
+                    # Ask the user if he really wants to replace it
                     if utils.confirm(
                         "A {} named {} already exists in the"
                         " backup.\nAre you sure that you want to"
@@ -106,19 +106,9 @@ class ApplicationProfile(object):
                     ):
                         # Delete the file in Mackup
                         utils.delete(mackup_filepath)
-                        # Copy the file
-                        utils.copy(home_filepath, mackup_filepath)
-                        # Delete the file in the home
-                        utils.delete(home_filepath)
-                        # Link the backuped file to its original place
-                        utils.link(mackup_filepath, home_filepath)
+                        self.backup_file(home_filepath, mackup_filepath)
                 else:
-                    # Copy the file
-                    utils.copy(home_filepath, mackup_filepath)
-                    # Delete the file in the home
-                    utils.delete(home_filepath)
-                    # Link the backuped file to its original place
-                    utils.link(mackup_filepath, home_filepath)
+                    self.backup_file(home_filepath, mackup_filepath)
             elif self.verbose:
                 if os.path.exists(home_filepath):
                     print(
@@ -137,6 +127,17 @@ class ApplicationProfile(object):
                 else:
                     print("Doing nothing\n  {}\n  does not exist".format(home_filepath))
 
+    def backup_file(self, home_filepath, mackup_filepath):
+        if self.strategy == "link":
+            utils.copy(home_filepath, mackup_filepath)
+            utils.delete(home_filepath)
+            # Link the backed up file to its original place
+            utils.link(mackup_filepath, home_filepath)
+        elif self.strategy == "copy":
+            utils.copy(home_filepath, mackup_filepath)
+        else:
+            raise ValueError("Invalid strategy {}".format(self.strategy))
+
     def restore(self):
         """
         Restore the application config files.
@@ -147,9 +148,9 @@ class ApplicationProfile(object):
                 are you sure?
                 if sure
                   rm home/file
-                  link mackup/file home/file
+                  link/copy mackup/file home/file
               else
-                link mackup/file home/file
+                link/copy mackup/file home/file
         """
         # For each file used by the application
         for filename in self.files:
@@ -199,9 +200,9 @@ class ApplicationProfile(object):
                         " your backup?".format(file_type, filename)
                     ):
                         utils.delete(home_filepath)
-                        utils.link(mackup_filepath, home_filepath)
+                        self.restore_file(mackup_filepath, home_filepath)
                 else:
-                    utils.link(mackup_filepath, home_filepath)
+                    self.restore_file(mackup_filepath, home_filepath)
             elif self.verbose:
                 if os.path.exists(home_filepath):
                     print(
@@ -220,6 +221,14 @@ class ApplicationProfile(object):
                     print(
                         "Doing nothing\n  {}\n  does not exist".format(mackup_filepath)
                     )
+
+    def restore_file(self, mackup_filepath, home_filepath):
+        if self.strategy == "link":
+            utils.link(mackup_filepath, home_filepath)
+        elif self.strategy == "copy":
+            utils.copy(mackup_filepath, home_filepath)
+        else:
+            raise ValueError("Invalid strategy {}".format(self.strategy))
 
     def uninstall(self):
         """
