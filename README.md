@@ -4,6 +4,11 @@ Keep your application settings in sync.
 
 [![Status](https://github.com/lra/mackup/workflows/Mackup/badge.svg)](https://github.com/lra/mackup/actions)
 [![snapcraft](https://snapcraft.io/mackup/badge.svg)](https://snapcraft.io/mackup)
+[![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
+
+[//]: # (https://github.com/Homebrew/homebrew-core/blob/f994f3b7df891809a0ca9a62b7ded785b4bc7ca6/Formula/mackup.rb)
+
+
 
 ## Table of content
 

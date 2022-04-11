@@ -5,46 +5,59 @@ An Application Profile contains all the information about an application in
 Mackup. Name, files, ...
 """
 import os
+from pathlib import Path
+from typing import Set, Tuple, List
 
-from .mackup import Mackup
 from . import utils
+from .mackup import Mackup
 
 
 class ApplicationProfile(object):
-
     """Instantiate this class with application specific data."""
 
-    def __init__(self, mackup, files, dry_run=False, strategy="link", verbose=False):
-        """
-        Create an ApplicationProfile instance.
-
-        Args:
-            mackup (Mackup)
-            files (list)
-        """
+    def __init__(self, mackup, app, dry_run=False, strategy="link", verbose=False):
         assert isinstance(mackup, Mackup)
-        assert isinstance(files, set)
 
         self.mackup = mackup
-        self.files = list(files)
+        self.app = app
         self.dry_run = dry_run
         self.strategy = strategy
         self.verbose = verbose
 
-    def getFilepaths(self, filename):
+    def get_files(self, source: Path, target: Path) -> List[Tuple[Path, Path, str]]:
         """
-        Get home and mackup filepaths for given file
+        Get all resolved home-mackup file path tuples. The according files
+        don't necessarily have to exist - this is verified elsewhere.
 
-        Args:
-            filename (str)
-
-        Returns:
-            home_filepath, mackup_filepath (str, str)
+        Parameters
+        ----------
+        source: Path
+                Where to resolve glob patterns from. For backups, this is the
+                home directory.
+        target: Path
+                Where to place the source files. For backups, this is the
+                mackup folder.
         """
-        return (
-            os.path.join(os.environ["HOME"], filename),
-            os.path.join(self.mackup.mackup_folder, filename),
-        )
+        file_paths: Set[str] = self.app["configuration_files"]
+        if self.app["enable_glob"]:
+            return [
+                (
+                    filename.resolve(),
+                    (target / filename.relative_to(source)).resolve(),
+                    str(filename.relative_to(source)),
+                )
+                for file_path in file_paths
+                for filename in source.glob(file_path)
+            ]
+        else:
+            return [
+                (
+                    (source / file_path).resolve(),
+                    (target / file_path).resolve(),
+                    file_path,
+                )
+                for file_path in file_paths
+            ]
 
     def backup(self):
         """
@@ -63,17 +76,21 @@ class ApplicationProfile(object):
                   mv home/file mackup/file
                   link mackup/file home/file
         """
-        # For each file used by the application
-        for filename in self.files:
-            (home_filepath, mackup_filepath) = self.getFilepaths(filename)
 
+        # NOTE: Not using Path.home() for being able to use fake home
+        #  directories (i.e. for testing)
+        source_folder = Path(os.environ["HOME"])
+
+        for home_filepath, mackup_filepath, filename in self.get_files(
+            source=source_folder,
+            target=Path(self.mackup.mackup_folder),
+        ):
             # If the file exists and is not already a link pointing to Mackup
             if (os.path.isfile(home_filepath) or os.path.isdir(home_filepath)) and not (
                 os.path.islink(home_filepath)
                 and (os.path.isfile(mackup_filepath) or os.path.isdir(mackup_filepath))
                 and os.path.samefile(home_filepath, mackup_filepath)
             ):
-
                 if self.verbose:
                     print(
                         "Backing up\n  {}\n  to\n  {} ...".format(
@@ -105,10 +122,10 @@ class ApplicationProfile(object):
                         " replace it?".format(file_type, mackup_filepath)
                     ):
                         # Delete the file in Mackup
-                        utils.delete(mackup_filepath)
-                        self.backup_file(home_filepath, mackup_filepath)
+                        utils.delete(str(mackup_filepath))
+                        self.backup_file(str(home_filepath), str(mackup_filepath))
                 else:
-                    self.backup_file(home_filepath, mackup_filepath)
+                    self.backup_file(str(home_filepath), str(mackup_filepath))
             elif self.verbose:
                 if os.path.exists(home_filepath):
                     print(
@@ -127,7 +144,7 @@ class ApplicationProfile(object):
                 else:
                     print("Doing nothing\n  {}\n  does not exist".format(home_filepath))
 
-    def backup_file(self, home_filepath, mackup_filepath):
+    def backup_file(self, home_filepath: str, mackup_filepath: str):
         if self.strategy == "link":
             utils.copy(home_filepath, mackup_filepath)
             utils.delete(home_filepath)
@@ -152,10 +169,14 @@ class ApplicationProfile(object):
               else
                 link/copy mackup/file home/file
         """
-        # For each file used by the application
-        for filename in self.files:
-            (home_filepath, mackup_filepath) = self.getFilepaths(filename)
 
+        mackup_folder = Path(self.mackup.mackup_folder)
+        home_folder = Path(os.environ["HOME"])
+
+        for mackup_filepath, home_filepath, filename in self.get_files(
+            source=mackup_folder,
+            target=home_folder,
+        ):
             # If the file exists and is not already pointing to the mackup file
             # and the folder makes sense on the current platform (Don't sync
             # any subfolder of ~/Library on GNU/Linux)
@@ -167,7 +188,9 @@ class ApplicationProfile(object):
                 and os.path.exists(mackup_filepath)
                 and os.path.samefile(mackup_filepath, home_filepath)
             )
-            supported = utils.can_file_be_synced_on_current_platform(filename)
+            supported = utils.can_file_be_synced_on_current_platform(
+                home_filepath.relative_to(home_folder)
+            )
 
             if file_or_dir_exists and not pointing_to_mackup and supported:
                 if self.verbose:
@@ -199,10 +222,10 @@ class ApplicationProfile(object):
                         " home.\nDo you want to replace it with"
                         " your backup?".format(file_type, filename)
                     ):
-                        utils.delete(home_filepath)
-                        self.restore_file(mackup_filepath, home_filepath)
+                        utils.delete(str(home_filepath))
+                        self.restore_file(str(mackup_filepath), str(home_filepath))
                 else:
-                    self.restore_file(mackup_filepath, home_filepath)
+                    self.restore_file(str(mackup_filepath), str(home_filepath))
             elif self.verbose:
                 if os.path.exists(home_filepath):
                     print(
@@ -222,7 +245,7 @@ class ApplicationProfile(object):
                         "Doing nothing\n  {}\n  does not exist".format(mackup_filepath)
                     )
 
-    def restore_file(self, mackup_filepath, home_filepath):
+    def restore_file(self, mackup_filepath: str, home_filepath: str):
         if self.strategy == "link":
             utils.link(mackup_filepath, home_filepath)
         elif self.strategy == "copy":
@@ -245,10 +268,14 @@ class ApplicationProfile(object):
             delete the mackup folder
             print how to delete mackup
         """
-        # For each file used by the application
-        for filename in self.files:
-            (home_filepath, mackup_filepath) = self.getFilepaths(filename)
 
+        mackup_folder = Path(self.mackup.mackup_folder)
+        home_folder = Path(os.environ["HOME"])
+
+        for mackup_filepath, home_filepath, filename in self.get_files(
+            source=mackup_folder,
+            target=home_folder,
+        ):
             # If the mackup file exists
             if os.path.isfile(mackup_filepath) or os.path.isdir(mackup_filepath):
                 # Check if there is a corresponding file in the home folder
@@ -267,9 +294,9 @@ class ApplicationProfile(object):
 
                     # If there is, delete it as we are gonna copy the Dropbox
                     # one there
-                    utils.delete(home_filepath)
+                    utils.delete(str(home_filepath))
 
                     # Copy the Dropbox file to the home folder
-                    utils.copy(mackup_filepath, home_filepath)
+                    utils.copy(str(mackup_filepath), str(home_filepath))
             elif self.verbose:
                 print("Doing nothing, {} does not exist".format(mackup_filepath))

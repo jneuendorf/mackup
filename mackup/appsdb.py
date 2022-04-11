@@ -27,7 +27,7 @@ class ApplicationsDatabase(object):
         # Build the dict that will contain the properties of each application
         self.apps = dict()
 
-        for config_file in ApplicationsDatabase.get_config_files():
+        for config_file in sorted(ApplicationsDatabase.get_config_files()):
             config = configparser.SafeConfigParser(allow_no_value=True)
 
             # Needed to not lowercase the configuration_files in the ini files
@@ -46,23 +46,25 @@ class ApplicationsDatabase(object):
                 app_name = filename[: -len(".cfg")]
 
                 # Start building a dict for this app
-                app = dict()
+                app = {
+                    "enable_glob": config.getboolean(
+                        "options",
+                        "enable_glob",
+                        fallback=False,
+                    ),
+                    # Add the fancy name for the app, for display purpose
+                    "name": config.get("application", "name"),
+                    # Add the configuration files to sync
+                    "configuration_files": set(),
+                }
 
-                # Add the fancy name for the app, for display purpose
-                app_pretty_name = config.get("application", "name")
-                app["name"] = app_pretty_name
-
-                # Add the configuration files to sync
-                app["configuration_files"] = set()
                 if config.has_section("configuration_files"):
                     for path in config.options("configuration_files"):
                         if path.startswith("/"):
                             raise ValueError(
                                 "Unsupported absolute path: {}".format(path)
                             )
-                        app["configuration_files"] |= self.get_resolved_paths(
-                            path, config
-                        )
+                        app["configuration_files"].add(path)
 
                 # Add the XDG configuration files to sync
                 home = os.path.expanduser("~/")
@@ -82,10 +84,7 @@ class ApplicationsDatabase(object):
                             )
                         path = os.path.join(xdg_config_home, path)
                         path = path.replace(home, "")
-                        app["configuration_files"] |= self.get_resolved_paths(
-                            path, config
-                        )
-
+                        app["configuration_files"].add(path)
                 self.apps[app_name] = app
 
     @staticmethod
@@ -130,6 +129,9 @@ class ApplicationsDatabase(object):
 
         return config_files
 
+    def get_app(self, name):
+        return self.apps[name]
+
     def get_name(self, name):
         """
         Return the fancy name of an application.
@@ -164,30 +166,4 @@ class ApplicationsDatabase(object):
         Returns:
             set of str.
         """
-        app_names = set()
-        for name in self.apps:
-            app_names.add(name)
-
-        return app_names
-
-    def get_pretty_app_names(self):
-        """
-        Return the list of pretty app names that are available in the database.
-
-        Returns:
-            set of str.
-        """
-        pretty_app_names = set()
-        for app_name in self.get_app_names():
-            pretty_app_names.add(self.get_name(app_name))
-
-        return pretty_app_names
-
-    def get_resolved_paths(self, path, config):
-        if config.getboolean("options", "enable_glob", fallback=False):
-            return {
-                os.path.relpath(resolved_path, start=os.environ["HOME"])
-                for resolved_path in glob.glob(os.path.join(os.environ["HOME"], path))
-            }
-        else:
-            return set([path])
+        return set(self.apps)
